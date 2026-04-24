@@ -535,8 +535,8 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIGURATION — replace with your project values
 // ══════════════════════════════════════════════════════════════
-const SUPABASE_URL      = 'https://loxknkpaprhecziohgaq.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxveGtua3BhcHJoZWN6aW9oZ2FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMTM5MzcsImV4cCI6MjA5MjU4OTkzN30.-snLcWeupy199YIzsqs-nJlxh3Ypy8rFgd8F0_TAiRA';
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 // ══════════════════════════════════════════════════════════════
 
 const DEMO_MODE = (SUPABASE_URL === 'YOUR_SUPABASE_URL');
@@ -642,31 +642,29 @@ async function createGame() {
   $('btn-create').disabled = true;
   const code = makeCode();
 
-  const { data, error } = await sb
-    .rpc('create_game')
-    .select()
+  // Direct insert — reliable id capture without RPC
+  const { data: ins, error: insErr } = await sb
+    .from('games')
+    .insert({ status: 'waiting', board_state: { code } })
+    .select('id')
     .single();
 
-  if (error) {
-    // Fallback: direct insert (if RPC not yet deployed)
-    const { data: ins, error: insErr } = await sb
-      .from('games')
-      .insert({ status: 'waiting', board_state: { code } })
-      .select('id')
-      .single();
+  if (insErr) {
+    showMsg('Could not create game: ' + insErr.message);
+    $('btn-create').disabled = false;
+    return;
+  }
 
-    if (insErr) {
-      showMsg('Could not create game: ' + insErr.message);
-      $('btn-create').disabled = false;
-      return;
-    }
+  myGameId = ins.id;
 
-    myGameId = ins.id;
-    await sb.from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
-  } else {
-    myGameId = data.id;
-    // Store code in board_state
-    await sb.from('games').update({ board_state: { code } }).eq('id', myGameId);
+  const { error: playerErr } = await sb
+    .from('game_players')
+    .insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
+
+  if (playerErr) {
+    showMsg('Could not register host: ' + playerErr.message);
+    $('btn-create').disabled = false;
+    return;
   }
 
   myRole = 'host';
