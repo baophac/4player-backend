@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Lobby</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ── CONFIG ── Replace with your Supabase project values ──────── */
+  /* See SUPABASE_URL and SUPABASE_ANON_KEY in the script below      */
+
+  :root {
+    --bg:        #0a0c0e;
+    --surface:   #111418;
+    --border:    #1e2530;
+    --border2:   #2a3545;
+    --text:      #c8d4e0;
+    --muted:     #4a5a6a;
+    --accent:    #00e5a0;
+    --accent2:   #005f42;
+    --warn:      #ff4d4d;
+    --warn2:     #4a0000;
+    --code-bg:   #0d1117;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-ui:   'Rajdhani', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.75) 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 480px;
+    padding: 24px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+    animation: fadeDown .5s ease both;
+  }
+
+  .header-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .header h1 {
+    font-family: var(--font-ui);
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: #fff;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  .header h1 span {
+    color: var(--accent);
+  }
+
+  .header-sub {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+    letter-spacing: .08em;
+  }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 32px;
+    position: relative;
+    animation: fadeUp .5s ease both;
+  }
+
+  /* Corner brackets */
+  .card::before, .card::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+  .card::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .card::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+  /* Scan line */
+  .card-scan {
+    position: absolute;
+    top: -1px; left: -1px; right: -1px;
+    height: 2px;
+    background: var(--accent);
+    opacity: .6;
+    animation: scan 3s ease-in-out infinite;
+  }
+
+  @keyframes scan {
+    0%,100% { opacity: .1; }
+    50% { opacity: .6; }
+  }
+
+  .section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border2);
+  }
+
+  /* Status row */
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+    padding: 10px 14px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background .3s;
+  }
+
+  .status-dot.green { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  .status-dot.red   { background: var(--warn); }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: .4; }
+  }
+
+  #status-text { color: var(--muted); }
+
+  /* Btn */
+  .btn {
+    width: 100%;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 3px;
+    font-family: var(--font-ui);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    transition: opacity .15s;
+  }
+
+  .btn:hover::after { opacity: .06; }
+  .btn:active::after { opacity: .12; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--warn);
+    border: 1px solid var(--warn2);
+  }
+
+  .btn-danger:hover { background: var(--warn2); }
+
+  .btn:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+  }
+
+  /* Input */
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--code-bg);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 18px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .2s;
+  }
+
+  .field input::placeholder { color: var(--muted); letter-spacing: .1em; }
+  .field input:focus { border-color: var(--accent); }
+
+  /* Code display */
+  .game-code-wrap {
+    margin-bottom: 24px;
+  }
+
+  .game-code-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .game-code {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--accent2);
+    border-radius: 3px;
+    padding: 16px 20px;
+  }
+
+  .game-code-value {
+    font-family: var(--font-mono);
+    font-size: 32px;
+    font-weight: 400;
+    color: var(--accent);
+    letter-spacing: .3em;
+    animation: fadeIn .4s ease;
+  }
+
+  .copy-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all .2s;
+    flex-shrink: 0;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .hint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 10px;
+    line-height: 1.7;
+  }
+
+  /* Players list */
+  .players-list {
+    margin-bottom: 24px;
+  }
+
+  .player-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    animation: fadeIn .3s ease both;
+  }
+
+  .player-row:last-child { border-bottom: none; }
+
+  .player-seat {
+    color: var(--accent);
+    width: 60px;
+    flex-shrink: 0;
+  }
+
+  .player-id { color: var(--muted); }
+
+  .player-you {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--accent);
+    border: 1px solid var(--accent2);
+    padding: 2px 6px;
+    border-radius: 2px;
+    letter-spacing: .1em;
+  }
+
+  /* Error / success messages */
+  .msg {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 10px 14px;
+    border-radius: 3px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+    animation: fadeIn .3s ease;
+  }
+
+  .msg-error   { background: var(--warn2); border: 1px solid var(--warn); color: var(--warn); }
+  .msg-success { background: #001f14; border: 1px solid var(--accent2); color: var(--accent); }
+
+  /* Config warning */
+  .config-warn {
+    background: #1a1000;
+    border: 1px solid #4a3000;
+    border-radius: 3px;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: #ffaa00;
+    margin-bottom: 20px;
+    line-height: 1.8;
+  }
+
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .1em;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Animations */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* Views */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .mt16 { margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div class="header-label">// tactical board game</div>
+    <h1>GAME <span>LOBBY</span></h1>
+    <div class="header-sub">4-player · turn-based · session-2025</div>
+  </div>
+
+  <div class="card">
+    <div class="card-scan"></div>
+
+    <!-- Config warning (shown when defaults are present) -->
+    <div class="config-warn" id="config-warn" style="display:none">
+      ⚠ SUPABASE NOT CONFIGURED<br>
+      Edit the SUPABASE_URL and SUPABASE_ANON_KEY at the top of the script, then reload.
+      Demo mode is active — actions are simulated locally.
+    </div>
+
+    <!-- Status row -->
+    <div class="status-row">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">initialising...</span>
+    </div>
+
+    <!-- Messages -->
+    <div id="msg-area"></div>
+
+    <!-- VIEW: Loading -->
+    <div class="view active" id="view-loading">
+      <div style="font-family:var(--font-mono);font-size:13px;color:var(--muted);text-align:center;padding:20px 0">
+        scanning for active sessions...
+      </div>
+    </div>
+
+    <!-- VIEW: No active game → Create -->
+    <div class="view" id="view-create">
+      <div class="section-title">no active session</div>
+      <p style="font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.8">
+        No game is currently open. Start one — you'll receive a 6-character access code to share with the other players.
+      </p>
+      <button class="btn btn-primary" id="btn-create">⬡ &nbsp;Create Game</button>
+    </div>
+
+    <!-- VIEW: Creator waiting room -->
+    <div class="view" id="view-host">
+      <div class="section-title">session active — host</div>
+
+      <div class="game-code-wrap">
+        <div class="game-code-label">access code — share this with players</div>
+        <div class="game-code">
+          <span class="game-code-value" id="display-code">------</span>
+          <button class="copy-btn" id="btn-copy" title="Copy to clipboard">copy</button>
+        </div>
+        <div class="hint">Players enter this code to join your game session.</div>
+      </div>
+
+      <div class="section-title" style="margin-top:0">players</div>
+      <div class="players-list" id="host-players-list"></div>
+
+      <button class="btn btn-danger" id="btn-end">✕ &nbsp;End Game</button>
+    </div>
+
+    <!-- VIEW: Joiner — enter code -->
+    <div class="view" id="view-join">
+      <div class="section-title">game open</div>
+      <p style="font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.8">
+        A session is available. Enter the 6-character access code from the host to join.
+      </p>
+      <div class="field">
+        <label>Access Code</label>
+        <input id="input-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false">
+      </div>
+      <button class="btn btn-primary" id="btn-join">⬡ &nbsp;Join Game</button>
+    </div>
+
+    <!-- VIEW: Joined — waiting -->
+    <div class="view" id="view-joined">
+      <div class="section-title">session active — player</div>
+      <div class="game-code-wrap">
+        <div class="game-code-label">session code</div>
+        <div class="game-code">
+          <span class="game-code-value" id="joined-code">------</span>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:0">players</div>
+      <div class="players-list" id="joined-players-list"></div>
+      <div class="hint" style="margin-top:8px">Waiting for the host to start the game...</div>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /shell -->
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// CONFIGURATION — replace with your project values
+// ══════════════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://loxknkpaprhecziohgaq.supabase.co/rest/v1/';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxveGtua3BhcHJoZWN6aW9oZ2FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMTM5MzcsImV4cCI6MjA5MjU4OTkzN30.-snLcWeupy199YIzsqs-nJlxh3Ypy8rFgd8F0_TAiRA';
+// ══════════════════════════════════════════════════════════════
+
+const DEMO_MODE = (SUPABASE_URL === 'YOUR_SUPABASE_URL');
+
+// ── State ────────────────────────────────────────────────────
+let supabaseClient  = null;
+let myUserId  = null;   // anonymous auth uid
+let myGameId  = null;
+let myRole    = null;   // 'host' | 'player'
+let realtimeCh = null;
+let demoState = { game: null, players: [] }; // used in demo mode
+
+// ── DOM refs ─────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function setStatus(text, state) {
+  $('status-text').textContent = text;
+  const dot = $('status-dot');
+  dot.className = 'status-dot' + (state === 'ok' ? ' green' : state === 'err' ? ' red' : '');
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + name).classList.add('active');
+}
+
+function showMsg(text, type = 'error') {
+  const el = $('msg-area');
+  el.innerHTML = `<div class="msg msg-${type}">${text}</div>`;
+  setTimeout(() => { el.innerHTML = ''; }, 5000);
+}
+
+function clearMsg() { $('msg-area').innerHTML = ''; }
+
+// ── Init ─────────────────────────────────────────────────────
+async function init() {
+  if (DEMO_MODE) {
+    $('config-warn').style.display = 'block';
+    setStatus('demo mode — not connected', '');
+    initDemo();
+    return;
+  }
+
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Anonymous sign-in so we have a stable uid
+  const { data: authData, error: authErr } = await supabaseClient.auth.signInAnonymously();
+  if (authErr) { setStatus('auth failed', 'err'); showMsg('Auth error: ' + authErr.message); return; }
+  myUserId = authData.user.id;
+
+  setStatus('connected', 'ok');
+  await checkForGame();
+}
+
+// ── Check if a game exists ───────────────────────────────────
+async function checkForGame() {
+  showView('loading');
+
+  const { data, error } = await supabase
+    .from('games')
+    .select('id, status')
+    .eq('status', 'waiting')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error) { showMsg('Error checking games: ' + error.message); showView('create'); return; }
+
+  if (!data || data.length === 0) {
+    // No active game
+    showView('create');
+    return;
+  }
+
+  const game = data[0];
+  myGameId = game.id;
+
+  // Am I already in it?
+  const { data: myRow } = await supabase
+    .from('game_players')
+    .select('seat')
+    .eq('game_id', myGameId)
+    .eq('user_id', myUserId)
+    .maybeSingle();
+
+  if (myRow) {
+    // Rejoin as host or player
+    myRole = myRow.seat === 0 ? 'host' : 'player';
+    myRole === 'host' ? enterHostView() : enterJoinedView();
+  } else {
+    showView('join');
+    setStatus('game open — enter code to join', 'ok');
+  }
+}
+
+// ── Generate 6-char alphanumeric code ───────────────────────
+function makeCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+// Store the code inside board_state so we can retrieve it
+async function createGame() {
+  $('btn-create').disabled = true;
+  const code = makeCode();
+
+  const { data, error } = await supabase
+    .rpc('create_game')
+    .select()
+    .single();
+
+  if (error) {
+    // Fallback: direct insert (if RPC not yet deployed)
+    const { data: ins, error: insErr } = await supabase
+      .from('games')
+      .insert({ status: 'waiting', board_state: { code } })
+      .select('id')
+      .single();
+
+    if (insErr) {
+      showMsg('Could not create game: ' + insErr.message);
+      $('btn-create').disabled = false;
+      return;
+    }
+
+    myGameId = ins.id;
+    await supabaseClient.from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
+  } else {
+    myGameId = data.id;
+    // Store code in board_state
+    await supabaseClient.from('games').update({ board_state: { code } }).eq('id', myGameId);
+  }
+
+  myRole = 'host';
+  $('display-code').textContent = code;
+  enterHostView();
+}
+
+async function enterHostView() {
+  showView('host');
+  setStatus('hosting — waiting for players', 'ok');
+
+  // Load the code
+  const { data: g } = await supabase
+    .from('games').select('board_state').eq('id', myGameId).single();
+  if (g?.board_state?.code) $('display-code').textContent = g.board_state.code;
+
+  await refreshPlayers('host-players-list');
+  subscribeRealtime();
+}
+
+async function enterJoinedView() {
+  showView('joined');
+  setStatus('joined — seat confirmed', 'ok');
+
+  const { data: g } = await supabase
+    .from('games').select('board_state').eq('id', myGameId).single();
+  if (g?.board_state?.code) $('joined-code').textContent = g.board_state.code;
+
+  await refreshPlayers('joined-players-list');
+  subscribeRealtime();
+}
+
+// ── Join game ────────────────────────────────────────────────
+async function joinGame() {
+  const inputCode = $('input-code').value.trim().toUpperCase();
+  if (inputCode.length !== 6) { showMsg('Enter all 6 characters.'); return; }
+
+  $('btn-join').disabled = true;
+
+  // Verify code matches the open game
+  const { data: g } = await supabase
+    .from('games').select('id, board_state, status')
+    .eq('id', myGameId).single();
+
+  if (!g || g.status !== 'waiting') {
+    showMsg('No open game found. It may have been closed.');
+    $('btn-join').disabled = false;
+    return;
+  }
+
+  if (g.board_state?.code !== inputCode) {
+    showMsg('Incorrect access code. Check with the host and try again.');
+    $('btn-join').disabled = false;
+    return;
+  }
+
+  // Try RPC first, fallback to direct insert
+  const { error } = await supabaseClient.rpc('join_game', { p_game_id: myGameId });
+
+  if (error) {
+    // Find next open seat
+    const { data: taken } = await supabase
+      .from('game_players').select('seat').eq('game_id', myGameId);
+    const takenSeats = (taken || []).map(r => r.seat);
+    const seat = [0,1,2,3].find(s => !takenSeats.includes(s));
+
+    if (seat === undefined) { showMsg('Game is full (4/4 players).'); $('btn-join').disabled = false; return; }
+
+    const { error: insErr } = await supabase
+      .from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat });
+
+    if (insErr) { showMsg('Could not join: ' + insErr.message); $('btn-join').disabled = false; return; }
+  }
+
+  myRole = 'player';
+  enterJoinedView();
+}
+
+// ── End game ─────────────────────────────────────────────────
+async function endGame() {
+  if (!confirm('End this game session? All players will be disconnected.')) return;
+  $('btn-end').disabled = true;
+
+  await supabaseClient.from('games').update({ status: 'finished' }).eq('id', myGameId);
+
+  if (realtimeCh) supabaseClient.removeChannel(realtimeCh);
+  myGameId = null; myRole = null;
+  setStatus('session ended', '');
+  showMsg('Game ended.', 'success');
+  showView('create');
+}
+
+// ── Realtime subscription ─────────────────────────────────────
+function subscribeRealtime() {
+  if (realtimeCh) supabaseClient.removeChannel(realtimeCh);
+
+  realtimeCh = supabase
+    .channel('game-room-' + myGameId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'game_players', filter: `game_id=eq.${myGameId}` }, () => {
+      const listId = myRole === 'host' ? 'host-players-list' : 'joined-players-list';
+      refreshPlayers(listId);
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${myGameId}` }, payload => {
+      if (payload.new?.status === 'finished') {
+        if (myRole !== 'host') {
+          showMsg('The host ended the game.', 'error');
+          showView('create');
+          setStatus('no active session', '');
+        }
+      }
+    })
+    .subscribe();
+}
+
+// ── Player list ───────────────────────────────────────────────
+async function refreshPlayers(containerId) {
+  const { data } = await supabase
+    .from('game_players').select('seat, user_id').eq('game_id', myGameId).order('seat');
+
+  const container = $(containerId);
+  if (!data) return;
+
+  container.innerHTML = data.map(p => `
+    <div class="player-row">
+      <span class="player-seat">SEAT ${p.seat}</span>
+      <span class="player-id">${p.user_id.slice(0,8)}…</span>
+      ${p.user_id === myUserId ? '<span class="player-you">YOU</span>' : ''}
+    </div>
+  `).join('');
+
+  // Empty seats
+  for (let s = data.length; s < 4; s++) {
+    container.innerHTML += `
+      <div class="player-row" style="opacity:.3">
+        <span class="player-seat">SEAT ${s}</span>
+        <span class="player-id">— awaiting player —</span>
+      </div>`;
+  }
+}
+
+// ── Copy button ───────────────────────────────────────────────
+$('btn-copy').addEventListener('click', () => {
+  const code = $('display-code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    $('btn-copy').textContent = 'copied!';
+    setTimeout(() => { $('btn-copy').textContent = 'copy'; }, 1500);
+  });
+});
+
+// ── Input: auto-uppercase ─────────────────────────────────────
+$('input-code').addEventListener('input', e => {
+  e.target.value = e.target.value.toUpperCase();
+});
+
+// ── Wire buttons ──────────────────────────────────────────────
+$('btn-create').addEventListener('click', () => DEMO_MODE ? demoCreate() : createGame());
+$('btn-join').addEventListener('click',   () => DEMO_MODE ? demoJoin()   : joinGame());
+$('btn-end').addEventListener('click',    () => DEMO_MODE ? demoEnd()    : endGame());
+
+// ══════════════════════════════════════════════════════════════
+// DEMO MODE — simulates backend locally for preview
+// ══════════════════════════════════════════════════════════════
+function initDemo() {
+  // Check sessionStorage for existing demo state
+  const saved = sessionStorage.getItem('demoGame');
+  if (saved) {
+    demoState = JSON.parse(saved);
+    myUserId = sessionStorage.getItem('demoUserId') || 'user-' + Math.random().toString(36).slice(2,8);
+    sessionStorage.setItem('demoUserId', myUserId);
+    myGameId = demoState.game?.id;
+
+    const myPlayer = demoState.players.find(p => p.user_id === myUserId);
+    if (myPlayer) {
+      myRole = myPlayer.seat === 0 ? 'host' : 'player';
+      demoRefreshView();
+      return;
+    }
+    // Game exists, I'm not in it
+    showView('join');
+    setStatus('demo — game open', '');
+    return;
+  }
+
+  myUserId = 'user-' + Math.random().toString(36).slice(2,8);
+  sessionStorage.setItem('demoUserId', myUserId);
+  showView('create');
+  setStatus('demo — no active session', '');
+}
+
+function demoCreate() {
+  const code = makeCode();
+  myGameId = 'game-' + Math.random().toString(36).slice(2,8);
+  demoState.game = { id: myGameId, status: 'waiting', code };
+  demoState.players = [{ seat: 0, user_id: myUserId }];
+  sessionStorage.setItem('demoGame', JSON.stringify(demoState));
+  sessionStorage.setItem('demoUserId', myUserId);
+
+  $('display-code').textContent = code;
+  myRole = 'host';
+  demoRefreshView();
+}
+
+function demoJoin() {
+  const inputCode = $('input-code').value.trim().toUpperCase();
+  if (inputCode.length !== 6) { showMsg('Enter all 6 characters.'); return; }
+
+  const saved = sessionStorage.getItem('demoGame');
+  if (!saved) { showMsg('No game found. Open the page in another tab and create one first.'); return; }
+
+  demoState = JSON.parse(saved);
+  if (demoState.game?.code !== inputCode) {
+    showMsg('Incorrect access code.'); return;
+  }
+
+  const taken = demoState.players.map(p => p.seat);
+  const seat = [0,1,2,3].find(s => !taken.includes(s));
+  if (seat === undefined) { showMsg('Game is full.'); return; }
+
+  myGameId = demoState.game.id;
+  demoState.players.push({ seat, user_id: myUserId });
+  sessionStorage.setItem('demoGame', JSON.stringify(demoState));
+
+  myRole = 'player';
+  $('joined-code').textContent = demoState.game.code;
+  demoRefreshView();
+}
+
+function demoEnd() {
+  sessionStorage.removeItem('demoGame');
+  demoState = { game: null, players: [] };
+  myGameId = null; myRole = null;
+  showMsg('Game ended.', 'success');
+  showView('create');
+  setStatus('demo — no active session', '');
+}
+
+function demoRefreshView() {
+  const listId = myRole === 'host' ? 'host-players-list' : 'joined-players-list';
+  const container = $(listId);
+
+  if (myRole === 'host') {
+    showView('host');
+    setStatus('demo — hosting', 'ok');
+    $('display-code').textContent = demoState.game.code;
+  } else {
+    showView('joined');
+    setStatus('demo — joined', 'ok');
+    $('joined-code').textContent = demoState.game.code;
+  }
+
+  container.innerHTML = demoState.players.map(p => `
+    <div class="player-row">
+      <span class="player-seat">SEAT ${p.seat}</span>
+      <span class="player-id">${p.user_id.slice(0,8)}…</span>
+      ${p.user_id === myUserId ? '<span class="player-you">YOU</span>' : ''}
+    </div>
+  `).join('');
+
+  for (let s = demoState.players.length; s < 4; s++) {
+    container.innerHTML += `
+      <div class="player-row" style="opacity:.3">
+        <span class="player-seat">SEAT ${s}</span>
+        <span class="player-id">— awaiting player —</span>
+      </div>`;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
