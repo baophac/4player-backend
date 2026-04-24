@@ -535,14 +535,14 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIGURATION — replace with your project values
 // ══════════════════════════════════════════════════════════════
-const SUPABASE_URL      = 'https://loxknkpaprhecziohgaq.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxveGtua3BhcHJoZWN6aW9oZ2FxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMTM5MzcsImV4cCI6MjA5MjU4OTkzN30.-snLcWeupy199YIzsqs-nJlxh3Ypy8rFgd8F0_TAiRA';
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 // ══════════════════════════════════════════════════════════════
 
 const DEMO_MODE = (SUPABASE_URL === 'YOUR_SUPABASE_URL');
 
 // ── State ────────────────────────────────────────────────────
-let supabaseClient  = null;
+let sb = null;
 let myUserId  = null;   // anonymous auth uid
 let myGameId  = null;
 let myRole    = null;   // 'host' | 'player'
@@ -580,10 +580,10 @@ async function init() {
     return;
   }
 
-  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // Anonymous sign-in so we have a stable uid
-  const { data: authData, error: authErr } = await supabaseClient.auth.signInAnonymously();
+  const { data: authData, error: authErr } = await sb.auth.signInAnonymously();
   if (authErr) { setStatus('auth failed', 'err'); showMsg('Auth error: ' + authErr.message); return; }
   myUserId = authData.user.id;
 
@@ -595,7 +595,7 @@ async function init() {
 async function checkForGame() {
   showView('loading');
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('games')
     .select('id, status')
     .eq('status', 'waiting')
@@ -614,7 +614,7 @@ async function checkForGame() {
   myGameId = game.id;
 
   // Am I already in it?
-  const { data: myRow } = await supabase
+  const { data: myRow } = await sb
     .from('game_players')
     .select('seat')
     .eq('game_id', myGameId)
@@ -642,14 +642,14 @@ async function createGame() {
   $('btn-create').disabled = true;
   const code = makeCode();
 
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .rpc('create_game')
     .select()
     .single();
 
   if (error) {
     // Fallback: direct insert (if RPC not yet deployed)
-    const { data: ins, error: insErr } = await supabase
+    const { data: ins, error: insErr } = await sb
       .from('games')
       .insert({ status: 'waiting', board_state: { code } })
       .select('id')
@@ -662,11 +662,11 @@ async function createGame() {
     }
 
     myGameId = ins.id;
-    await supabaseClient.from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
+    await sb.from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
   } else {
     myGameId = data.id;
     // Store code in board_state
-    await supabaseClient.from('games').update({ board_state: { code } }).eq('id', myGameId);
+    await sb.from('games').update({ board_state: { code } }).eq('id', myGameId);
   }
 
   myRole = 'host';
@@ -679,7 +679,7 @@ async function enterHostView() {
   setStatus('hosting — waiting for players', 'ok');
 
   // Load the code
-  const { data: g } = await supabase
+  const { data: g } = await sb
     .from('games').select('board_state').eq('id', myGameId).single();
   if (g?.board_state?.code) $('display-code').textContent = g.board_state.code;
 
@@ -691,7 +691,7 @@ async function enterJoinedView() {
   showView('joined');
   setStatus('joined — seat confirmed', 'ok');
 
-  const { data: g } = await supabase
+  const { data: g } = await sb
     .from('games').select('board_state').eq('id', myGameId).single();
   if (g?.board_state?.code) $('joined-code').textContent = g.board_state.code;
 
@@ -707,7 +707,7 @@ async function joinGame() {
   $('btn-join').disabled = true;
 
   // Verify code matches the open game
-  const { data: g } = await supabase
+  const { data: g } = await sb
     .from('games').select('id, board_state, status')
     .eq('id', myGameId).single();
 
@@ -724,18 +724,18 @@ async function joinGame() {
   }
 
   // Try RPC first, fallback to direct insert
-  const { error } = await supabaseClient.rpc('join_game', { p_game_id: myGameId });
+  const { error } = await sb.rpc('join_game', { p_game_id: myGameId });
 
   if (error) {
     // Find next open seat
-    const { data: taken } = await supabase
+    const { data: taken } = await sb
       .from('game_players').select('seat').eq('game_id', myGameId);
     const takenSeats = (taken || []).map(r => r.seat);
     const seat = [0,1,2,3].find(s => !takenSeats.includes(s));
 
     if (seat === undefined) { showMsg('Game is full (4/4 players).'); $('btn-join').disabled = false; return; }
 
-    const { error: insErr } = await supabase
+    const { error: insErr } = await sb
       .from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat });
 
     if (insErr) { showMsg('Could not join: ' + insErr.message); $('btn-join').disabled = false; return; }
@@ -750,9 +750,9 @@ async function endGame() {
   if (!confirm('End this game session? All players will be disconnected.')) return;
   $('btn-end').disabled = true;
 
-  await supabaseClient.from('games').update({ status: 'finished' }).eq('id', myGameId);
+  await sb.from('games').update({ status: 'finished' }).eq('id', myGameId);
 
-  if (realtimeCh) supabaseClient.removeChannel(realtimeCh);
+  if (realtimeCh) sb.removeChannel(realtimeCh);
   myGameId = null; myRole = null;
   setStatus('session ended', '');
   showMsg('Game ended.', 'success');
@@ -761,9 +761,9 @@ async function endGame() {
 
 // ── Realtime subscription ─────────────────────────────────────
 function subscribeRealtime() {
-  if (realtimeCh) supabaseClient.removeChannel(realtimeCh);
+  if (realtimeCh) sb.removeChannel(realtimeCh);
 
-  realtimeCh = supabase
+  realtimeCh = sb
     .channel('game-room-' + myGameId)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'game_players', filter: `game_id=eq.${myGameId}` }, () => {
       const listId = myRole === 'host' ? 'host-players-list' : 'joined-players-list';
@@ -783,7 +783,7 @@ function subscribeRealtime() {
 
 // ── Player list ───────────────────────────────────────────────
 async function refreshPlayers(containerId) {
-  const { data } = await supabase
+  const { data } = await sb
     .from('game_players').select('seat, user_id').eq('game_id', myGameId).order('seat');
 
   const container = $(containerId);
