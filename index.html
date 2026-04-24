@@ -479,6 +479,10 @@
       <p style="font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.8">
         No game is currently open. Start one — you'll receive a 6-character access code to share with the other players.
       </p>
+      <div class="field">
+        <label>Your Name</label>
+        <input id="input-create-name" type="text" maxlength="20" placeholder="Enter your name" autocomplete="off" spellcheck="false" style="font-size:16px;letter-spacing:.05em;text-transform:none">
+      </div>
       <button class="btn btn-primary" id="btn-create">⬡ &nbsp;Create Game</button>
     </div>
 
@@ -507,6 +511,10 @@
       <p style="font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.8">
         A session is available. Enter the 6-character access code from the host to join.
       </p>
+      <div class="field">
+        <label>Your Name</label>
+        <input id="input-join-name" type="text" maxlength="20" placeholder="Enter your name" autocomplete="off" spellcheck="false" style="font-size:16px;letter-spacing:.05em;text-transform:none">
+      </div>
       <div class="field">
         <label>Access Code</label>
         <input id="input-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false">
@@ -546,6 +554,7 @@ let sb = null;
 let myUserId  = null;   // anonymous auth uid
 let myGameId  = null;
 let myRole    = null;   // 'host' | 'player'
+let myPlayerName = null;
 let realtimeCh = null;
 let demoState = { game: null, players: [] }; // used in demo mode
 
@@ -639,6 +648,9 @@ function makeCode() {
 
 // Store the code inside board_state so we can retrieve it
 async function createGame() {
+  const playerName = $('input-create-name').value.trim();
+  if (!playerName) { showMsg('Please enter your name.'); return; }
+
   $('btn-create').disabled = true;
   const code = makeCode();
 
@@ -656,10 +668,11 @@ async function createGame() {
   }
 
   myGameId = ins.id;
+  myPlayerName = playerName;
 
   const { error: playerErr } = await sb
     .from('game_players')
-    .insert({ game_id: myGameId, user_id: myUserId, seat: 0 });
+    .insert({ game_id: myGameId, user_id: myUserId, seat: 0, player_name: playerName });
 
   if (playerErr) {
     showMsg('Could not register host: ' + playerErr.message);
@@ -699,10 +712,14 @@ async function enterJoinedView() {
 
 // ── Join game ────────────────────────────────────────────────
 async function joinGame() {
+  const playerName = $('input-join-name').value.trim();
+  if (!playerName) { showMsg('Please enter your name.'); return; }
+
   const inputCode = $('input-code').value.trim().toUpperCase();
   if (inputCode.length !== 6) { showMsg('Enter all 6 characters.'); return; }
 
   $('btn-join').disabled = true;
+  myPlayerName = playerName;
 
   // Verify code matches the open game
   const { data: g } = await sb
@@ -734,7 +751,7 @@ async function joinGame() {
     if (seat === undefined) { showMsg('Game is full (4/4 players).'); $('btn-join').disabled = false; return; }
 
     const { error: insErr } = await sb
-      .from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat });
+      .from('game_players').insert({ game_id: myGameId, user_id: myUserId, seat, player_name: myPlayerName });
 
     if (insErr) { showMsg('Could not join: ' + insErr.message); $('btn-join').disabled = false; return; }
   }
@@ -782,15 +799,15 @@ function subscribeRealtime() {
 // ── Player list ───────────────────────────────────────────────
 async function refreshPlayers(containerId) {
   const { data } = await sb
-    .from('game_players').select('seat, user_id').eq('game_id', myGameId).order('seat');
+    .from('game_players').select('seat, user_id, player_name').eq('game_id', myGameId).order('seat');
 
   const container = $(containerId);
   if (!data) return;
 
   container.innerHTML = data.map(p => `
     <div class="player-row">
-      <span class="player-seat">SEAT ${p.seat}</span>
-      <span class="player-id">${p.user_id.slice(0,8)}…</span>
+      <span class="player-seat">PLAYER ${p.seat + 1}</span>
+      <span class="player-id">${p.player_name || 'Anonymous'}</span>
       ${p.user_id === myUserId ? '<span class="player-you">YOU</span>' : ''}
     </div>
   `).join('');
@@ -799,7 +816,7 @@ async function refreshPlayers(containerId) {
   for (let s = data.length; s < 4; s++) {
     container.innerHTML += `
       <div class="player-row" style="opacity:.3">
-        <span class="player-seat">SEAT ${s}</span>
+        <span class="player-seat">PLAYER ${s + 1}</span>
         <span class="player-id">— awaiting player —</span>
       </div>`;
   }
@@ -855,10 +872,12 @@ function initDemo() {
 }
 
 function demoCreate() {
+  const playerName = $('input-create-name').value.trim() || 'Player 1';
+  myPlayerName = playerName;
   const code = makeCode();
   myGameId = 'game-' + Math.random().toString(36).slice(2,8);
   demoState.game = { id: myGameId, status: 'waiting', code };
-  demoState.players = [{ seat: 0, user_id: myUserId }];
+  demoState.players = [{ seat: 0, user_id: myUserId, player_name: playerName }];
   sessionStorage.setItem('demoGame', JSON.stringify(demoState));
   sessionStorage.setItem('demoUserId', myUserId);
 
@@ -883,8 +902,10 @@ function demoJoin() {
   const seat = [0,1,2,3].find(s => !taken.includes(s));
   if (seat === undefined) { showMsg('Game is full.'); return; }
 
+  const joinName = $('input-join-name').value.trim() || 'Player ' + (seat + 1);
+  myPlayerName = joinName;
   myGameId = demoState.game.id;
-  demoState.players.push({ seat, user_id: myUserId });
+  demoState.players.push({ seat, user_id: myUserId, player_name: joinName });
   sessionStorage.setItem('demoGame', JSON.stringify(demoState));
 
   myRole = 'player';
@@ -917,8 +938,8 @@ function demoRefreshView() {
 
   container.innerHTML = demoState.players.map(p => `
     <div class="player-row">
-      <span class="player-seat">SEAT ${p.seat}</span>
-      <span class="player-id">${p.user_id.slice(0,8)}…</span>
+      <span class="player-seat">PLAYER ${p.seat + 1}</span>
+      <span class="player-id">${p.player_name || p.user_id.slice(0,8) + "…"}</span>
       ${p.user_id === myUserId ? '<span class="player-you">YOU</span>' : ''}
     </div>
   `).join('');
@@ -926,7 +947,7 @@ function demoRefreshView() {
   for (let s = demoState.players.length; s < 4; s++) {
     container.innerHTML += `
       <div class="player-row" style="opacity:.3">
-        <span class="player-seat">SEAT ${s}</span>
+        <span class="player-seat">PLAYER ${s + 1}</span>
         <span class="player-id">— awaiting player —</span>
       </div>`;
   }
